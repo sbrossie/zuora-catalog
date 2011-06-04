@@ -1,0 +1,9 @@
+sandbox:
+  zuora:
+       is_dump: false
+       url: https://apisandbox.zuora.com/apps/services/a/27.0
+       username: to_be_filled
+       password: to_be_filled
+dump:
+  zuora:
+      is_dump: true

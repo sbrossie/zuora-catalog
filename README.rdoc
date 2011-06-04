@@ -1,0 +1,127 @@
+== zuora-catalog
+
+
+The zuora-catalog is a tool built on top of zuora4r and whose purpose is to interact with with Zuora catalog information through API calls.
+It allows the following:
+- Given an environment (production, sandbox,..), fetch the catalog from zuora and create both a ruby archive and a CSV file.
+In the example below, we fetch from the zuora sandbox the existing catalog and create both a CSV and rdump file:
+> zuora-catalog -F -e sandbox -k ./conf/config.yml -c ./catalog_sandbox.csv -d ./catalog_sandbox.rdmp  -l DEBUG
+
+- Given an existing dump catalog (see previous point) and a CSV file, validate those two match:
+In the example below, we compare the reference catalog (./catalog_ref.rdmp) with the catalog ./catalog_new.csv
+> zuora-catalog -V -e dump  -k ./conf/config.yml -d ./catalog_ref.rdmp  -c ./catalog_new.csv  -l DEBUG
+
+
+- Given an environment (production, sandbox,..), an existing dump and a CSV file, synchronize zuora with the provided csv file.
+In the example given below, we first do a comparison between  the reference catalog (./catalog_ref.rdmp) with the catalog ./catalog_new.csv
+and either i) we abort if there are inconsistencies or ii) we allow to synchronize the zuora sandbox with the new information in catalog_new.csv 
+> zuora-catalog -S -e sandbox  -k ./conf/config.yml  -d ./catalog_ref.rdmp  -c ./catalog_new.csv  -l DEBUG
+
+
+The flow of operation typically is the following:
+1) Download latest catalog from zuora environment using option '-F'
+2) Validate or push new catalog entries using either option '-V' or '-S'
+
+
+Configuration:
+
+For each zuora environment (production, sandbox,..) there should one an entry in in the configuration file. The format of that file is:
+
+------------
+sandbox:
+  zuora:
+       is_dump: false
+       url: https://www.zuora.com/apps/services/a/27.0
+       username: <username>
+       password: <pwd>
+dump:
+  zuora:
+      is_dump: true
+
+-------------------
+
+Private Fields:
+
+Zuora allows to define private fields for catalog objects. Those private fields need to be abstracted since each user will have a potentially different set.
+That makes things a bit more complicated both in terms of code and configuration. If you are not using private fields you can ignore the rest of this section.
+If you do, there a couple of configuration that need to happen:
+1. You need to configure those fields correctly in zuora4r (file custom_fields.yml) on which that tool relies.
+2. You have the ability to define validation callbacks to check for sanity of fields in your csv file 
+3. You have the ability to overwrite the 'keys' for each object. By default the CSVproduct object uses the 'sku' field as a key and the CSVRP uses the 'name' field as a key.
+
+
+. Regarding custom field in zuora4r, the config file looks like the following-- for each zuora object list the private fields:
+
+-----------------------------
+Product:
+  NumInstances
+  InclusionList
+  AvailabilityList
+  ProductType
+ProductRatePlan:
+  NumInstances
+  Slug
+---------------------------
+
+. Regarding validation callbacks: 
+
+In addition to that, there is a way to register some validation callback when using the option '-V' or '-S'.
+Those callbacks allow to specify for each field what to check. This file can be specified using the '-s' flag
+> zuora-catalog -V -e dump  -s ./lib/sanity/sanity.rb -k ./conf/config.yml -d ./catalog_ref.rdmp  -c ./catalog_new.csv  -l DEBUG
+
+An example of a file ./lib/sanity/sanity.rb is shown below:
+
+_____________________________________________
+
+$:.unshift File.join(File.dirname(__FILE__),'.')
+
+module CatalogTool
+
+ module Sanity
+
+	class SanityException < Exception
+
+	end
+
+    # SANITY_PRODUCT defines callback for CSVProduct
+	SANITY_PRODUCT = {
+
+	  'product_type' => lambda { |field, key, value|
+		// Your code to check 'product_type' field in the product CSV
+		}
+    }
+	   
+    # SANITY_RP defines callbacks for CSVRP
+    SANITY_RP = {
+        'name' => lambda { |field, key, value|  
+        // Your code there
+        }
+	}
+    end
+end
+--------------------------------------
+
+. Regarding overwriting the keys for the CSVProduct / CSVRP
+
+The presence of a configuration file conf/csv_key.yml allows to overwrite default keys
+-----------------------
+CSVProduct:
+    key: my_product_key
+CSVRP:
+    key:  my_rp_key
+------------------
+
+== Tests
+
+In order to run the tests you need to have a file called conf/environment.yml with an entry 'sandbox' and correct user/pwd for your zuora sandbox account.
+
+
+== Contributing to zuora-catalog
+ 
+
+== Copyright
+
+Copyright (c) 2011 Ning, Inc. See LICENSE.txt for
+further details.
+
+
