@@ -86,7 +86,7 @@ module CatalogTool
     def sanity_check(hash_diff)
       
       if !hash_diff[:prods_missing].nil? && hash_diff[:prods_missing].size > 0
-        missing_products = hash_diff[:prods_missing].collect { |e| e.sku } 
+        missing_products = hash_diff[:prods_missing].collect { |e| e.key } 
         @logger.warn("Missing products #{missing_products.join(",")}")
         raise ValidationException, "Missing products : can't sync with zuora!!"
       end 
@@ -98,7 +98,7 @@ module CatalogTool
       end 
 
       if !hash_diff[:prods_diff_err].nil? && hash_diff[:prods_diff_err].size > 0
-        diff_prods = hash_diff[:prods_diff_err].collect { |p| p.sku }
+        diff_prods = hash_diff[:prods_diff_err].collect { |p| p.key }
         @logger.warn("Modified products #{diff_prods.join(",")}")
         raise ValidationException, "PRODS differ : can't sync with zuora!!" 
       end 
@@ -115,9 +115,9 @@ module CatalogTool
       products_diff.each do |p|
 
         # Will retrun from method if confirmation is needed and it is not 'y'
-        wait_for_answer.call("Create new product #{p.sku}")
+        wait_for_answer.call("Create new product #{p.key}")
         product_private_fields = p.extract_map_from_private_fields
-        res = zuora_client.create_product(p.name, p.sku, product_private_fields)
+        res = zuora_client.create_product(p.name, p.key, product_private_fields)
         if ! res[0][:success]
           raise ValidationException, "Failed to create product #{p.name}, error #{res[0][:errors][0][:messsage]}"
         end
@@ -130,7 +130,7 @@ module CatalogTool
         # hack ; key should come from product (instead of hardcoding sku)
         z_product = zuora_client.get_product_from_key('sku', rp.product_sku)
         if z_product.size != 1 || z_product[0]['id'].nil?
-          raise ValidationException, "Missing product #{rp.product.sku} in zuora"
+          raise ValidationException, "Missing product #{rp.product.key} in zuora"
         end
 
         wait_for_answer.call("Create new rp #{rp.key}")
@@ -159,18 +159,18 @@ module CatalogTool
       
       prods_diff.each do |p|
         
-        z_product = zuora_client.get_product_from_sku(p.key, p.sku)
+        z_product = zuora_client.get_product_from_sku(p.key, p.key)
         if z_product.size != 1 || z_product[0]['id'].nil?
-          raise ValidationException, "Missing product #{rp.product.sku} in zuora"
+          raise ValidationException, "Missing product #{rp.product.key} in zuora"
         end
         
-        wait_for_answer.call("Update product #{p.sku}")
+        wait_for_answer.call("Update product #{p.key}")
         product_private_fields = p.extract_map_from_private_fields        
         res = zuora_client.update_product(z_product[0]['id'], product_private_fields)
         if ! res[0][:success]
-          raise ValidationException, "Failed to update product for #{p.sku},  error #{res[0][:errors][0][:messsage]}"
+          raise ValidationException, "Failed to update product for #{p.key},  error #{res[0][:errors][0][:messsage]}"
         end
-        @logger.info("Successfully updated product #{p.sku}")
+        @logger.info("Successfully updated product #{p.key}")
       end
     end
     
@@ -252,14 +252,14 @@ module CatalogTool
 
       compare_csv_catalogs(ref_csv, check_csv, prods_miss, prods_diff_err, prods_diff_ok, rps_miss, rps_diff_err, rps_diff_ok, price_updates)
       if prods_miss.size != 0
-        prods_miss_sku = prods_miss.collect { |p| p.sku } 
+        prods_miss_sku = prods_miss.collect { |p| p.key } 
         @logger.info("\tMISSING PRODUCTS : NOK #{prods_miss.size.to_s} (#{prods_miss_sku.join(",")})")
       else
         @logger.info("\tMISSING PRODUCTS : OK")
       end
 
       if prods_diff_err.size != 0
-        prods_diff_err_sku = prods_diff_err.collect { |p| p.sku}
+        prods_diff_err_sku = prods_diff_err.collect { |p| p.key}
         @logger.info("\tPRODUCT INCONSISTENCIES : NOK #{prods_diff_err.size.to_s} (#{prods_diff_err_sku.join(",")})")
       else
         @logger.info("\tPRODUCT INCONSISTENCIES : OK")
@@ -287,7 +287,7 @@ module CatalogTool
       end
       
       if prods_diff_ok.size != 0
-        prods_diff_ok_sku = prods_diff_ok.collect { |p| p.sku }
+        prods_diff_ok_sku = prods_diff_ok.collect { |p| p.key }
         @logger.info("\tPRODUCT DIFFERENCES : NOK #{prods_diff_ok.size.to_s} (#{prods_diff_ok_sku.join(",")})")        
       else
         @logger.info("\tPRODUCT DIFFERENCES : OK")                
@@ -319,7 +319,7 @@ module CatalogTool
       end
       
       if prods_new.size != 0
-        prods_new_sku = prods_new.collect { |p| p.sku }
+        prods_new_sku = prods_new.collect { |p| p.key }
         @logger.info("\tNEW PRODUCTS : NOK #{prods_new.size} (#{prods_new_sku.join(",")})")
       else
         @logger.info("\tNEW PRODUCTS : OK")        
@@ -353,7 +353,7 @@ module CatalogTool
         found = false
         csv2.csv_products.each do |p2|
 
-          if p1.sku == p2.sku
+          if p1.key == p2.key
             is_same = p1.is_same(p2, prods_diff_err, prods_diff_ok, rps_miss, rps_diff_err, rps_diff_ok, price_updates)
             res = false unless is_same
             found = true

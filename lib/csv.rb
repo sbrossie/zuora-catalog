@@ -121,7 +121,7 @@ module CatalogTool
 
       res = true
       if ! is_same_string?(@name, csv_prod.name)
-        @logger.debug("product #{sku} differs #{@name} -> #{csv_prod.name}")
+        @logger.debug("\t -> [PROD #{self.key}]  differs #{@name} -> #{csv_prod.name}")
         prods_diff.push(csv_prod)
         res = false
       end
@@ -131,7 +131,7 @@ module CatalogTool
         priv = camel_to_underscore(priv)
         getter = "#{priv}".to_sym
         if !is_same_string?(self.send(getter), csv_prod.send(getter))
-          @logger.debug("product #{sku} differs for field #{priv} : #{self.send(getter)} ->  #{csv_prod.send(getter)}")
+          @logger.debug("\t -> [PROD #{self.key}] differs for field #{priv} : #{self.send(getter)} ->  #{csv_prod.send(getter)}")
           prods_diff_ok.push(csv_prod) unless prods_diff_ok.nil? || prods_diff_ok.include?(csv_prod)
         end
       end
@@ -147,14 +147,14 @@ module CatalogTool
             if !is_same
               rp_diffs.push(rp1)
               res = false
-              @logger.debug("prod #{@sku} does not have same rp #{rp1.key} as peer")
+              @logger.debug("\t -> [PROD #{self.key}] does not have same rp #{rp1.key} as peer")
             end
           end
         end
         if !found
           rp_miss.push(rp1)
           res = false
-          @logger.debug("prod #{@sku} peer does not have rp #{rp1.key}")
+          @logger.debug("\t -> [PROD #{self.key}] peer does not have rp #{rp1.key}")
         end
       end
       res
@@ -208,15 +208,15 @@ module CatalogTool
 
 
       if ! is_same_string?(@billing_period,csv_rp.billing_period)
-        @logger.debug("billing_period #{@billing_period} is different than #{csv_rp.billing_period}")
+        @logger.debug("\t -> [RP #{self.key}] billing_period #{@billing_period} is different than #{csv_rp.billing_period}")
         return false
       end
       if ! is_same_string?(@accounting_code,csv_rp.accounting_code)
-        @logger.debug("accounting_code #{@accounting_code} is different than #{csv_rp.accounting_code}")
+        @logger.debug("\t -> [RP #{self.key}] accounting_code #{@accounting_code} is different than #{csv_rp.accounting_code}")
         return false
       end
       if ! is_same_string?(@charge_type,csv_rp.charge_type)
-        @logger.debug("charge_type #{@charge_type} is different than #{csv_rp.charge_type}")
+        @logger.debug("\t -> [RP #{self.key}] charge_type #{@charge_type} is different than #{csv_rp.charge_type}")
         return false
       end
 
@@ -227,7 +227,7 @@ module CatalogTool
 
         # Check private fields
         if !is_same_string?(self.send(getter), csv_rp.send(getter))
-          @logger.debug("#{priv} #{self.send(getter)} is different than #{csv_rp.send(getter)}")
+          @logger.debug("\t -> [RP #{self.key}] #{priv} #{self.send(getter)} is different than #{csv_rp.send(getter)} ")
           rp_diffs_ok.push(csv_rp) unless rp_diffs_ok.nil? || rp_diffs_ok.include?(csv_rp)
         end
       end
@@ -240,7 +240,7 @@ module CatalogTool
         cur_currency = c.value.downcase
         getter = "#{cur_currency}".to_sym
         if (self.send(getter) != csv_rp.send(getter))
-          @logger.debug("price differs for rp = #{self.key} for currency #{c.value}: #{self.send(getter)} => #{csv_rp.send(getter)} ")
+          @logger.debug("\t -> [RP #{self.key}] price differs for rp = #{self.key} for currency #{c.value}: #{self.send(getter)} => #{csv_rp.send(getter)} ")
           price_updates.push(csv_rp) unless price_differs
           price_differs = true
           break
@@ -586,28 +586,32 @@ module CatalogTool
           @logger.debug("\t ****************  Got entry #{e} for state = #{state.value.to_s()} (#{state.label.to_s()})} ")
           if state == CSVStateMachine::FOUND_PROD_HEADERS
 
-            sku, name, *read_private_fields = e.split(CSV_SEP)            
-            hash_product_private = {}
-            @product_private_fields.each_with_index do |f, i|
-              hash_product_private[f] = read_private_fields[i]
+            sku, name, *read_private_fields = e.split(CSV_SEP)
+            if sku && name
+              hash_product_private = {}
+              @product_private_fields.each_with_index do |f, i|
+                hash_product_private[f] = read_private_fields[i]
+              end
+              csv_product = CSVProduct.new(@logger, @sanity_product_callbacks, sku, name, hash_product_private)
+              products_hash[sku] = csv_product
             end
-            csv_product = CSVProduct.new(@logger, @sanity_product_callbacks, sku, name, hash_product_private)
-            products_hash[sku] = csv_product
           elsif state == CSVStateMachine::FOUND_RP_HEADERS
             # read_remaining contains both private fields and currencies
             product_sku, name, billing_period, accounting_code, charge_type, *read_remaining = e.split(CSV_SEP)
-            hash_rp_private = {}
-            @rp_private_fields.each_with_index do |f, i|
-              hash_rp_private[f] = read_remaining.shift 
-            end
-            prices = read_remaining
+            if product_sku 
+              hash_rp_private = {}
+              @rp_private_fields.each_with_index do |f, i|
+                hash_rp_private[f] = read_remaining.shift 
+              end
+              prices = read_remaining
 
-            csv_product = products_hash[product_sku]
-            if csv_product.nil?
-              raise CSVCatalogException, "Error in state machine, no active product #{product_sku} for #{e}"
+              csv_product = products_hash[product_sku]
+              if csv_product.nil?
+                raise CSVCatalogException, "Error in state machine, no active product #{product_sku} for #{e}"
+              end
+              csv_rp = CSVRP.new(@logger, @sanity_rp_callbacks, product_sku, name, billing_period, accounting_code, charge_type, hash_rp_private, *(prices.collect! {|p| Float(p)}))
+              csv_product.rps.push(csv_rp)
             end
-            csv_rp = CSVRP.new(@logger, @sanity_rp_callbacks, product_sku, name, billing_period, accounting_code, charge_type, hash_rp_private, *(prices.collect! {|p| Float(p)}))
-            csv_product.rps.push(csv_rp)
           end
         end
 
