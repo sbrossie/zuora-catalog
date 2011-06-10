@@ -80,6 +80,9 @@ module CatalogTool
           @options[:sanity] = s
         end        
 
+        opts.on("-x", "--push-through",
+        "Disable checking when syncing") { @options[:push_through] = true }
+
         #
         # Dump, csv and logging
         #
@@ -243,7 +246,7 @@ module CatalogTool
       config = Config.new(@env, @config, logger)
       zuora_client = Zuora::API.new(config)
 
-      validator.sync_from_diff(hash_diff, zuora_client, true)
+      validator.sync_from_diff(hash_diff, zuora_client, true, @options[:push_through])
 
     end
 

@@ -34,7 +34,7 @@ module CatalogTool
      end
     
 
-     def sync_from_diff(hash_diff, zuora_client, pause_between_change)
+     def sync_from_diff(hash_diff, zuora_client, pause_between_change, force_through=false)
 
        begin
          
@@ -43,19 +43,22 @@ module CatalogTool
            return
          end
 
-         sanity_check(hash_diff)
+         if !force_through
+           sanity_check(hash_diff)
+         end
 
          # Abort current method if does not type 'y' between each modification
          wait_for_answer_proc = Proc.new do |msg|
            if pause_between_change
-             puts "\n#{msg} [y/n]?"
+             puts "\n#{msg} [y/n/a]?"
              ans=gets
              ansf=ans.chomp
-             if ansf.casecmp("y") != 0
-               @logger.info("Aborted call")
+             if ansf.casecmp("a") == 0
+               @logger.info("Aborted sync")
                return
              end
            end
+           ansf.casecmp("n") == 0
          end
 
          if !hash_diff[:prods_new].nil? && hash_diff[:prods_new].size > 0
@@ -115,11 +118,15 @@ module CatalogTool
       products_diff.each do |p|
 
         # Will retrun from method if confirmation is needed and it is not 'y'
-        wait_for_answer.call("Create new product #{p.key}")
-        product_private_fields = p.extract_map_from_private_fields
-        res = zuora_client.create_product(p.name, p.key, product_private_fields)
-        if ! res[0][:success]
-          raise ValidationException, "Failed to create product #{p.name}, error #{res[0][:errors][0][:messsage]}"
+        skip = wait_for_answer.call("Create new product #{p.sku}")
+        if skip
+            @logger.warn("Skipping new product #{p.sku}")
+        else
+          product_private_fields = p.extract_map_from_private_fields
+          res = zuora_client.create_product(p.name, p.key, product_private_fields)
+          if ! res[0][:success]
+            raise ValidationException, "Failed to create product #{p.name}, error #{res[0][:errors][0][:messsage]}"
+          end
         end
       end
     end
@@ -133,24 +140,28 @@ module CatalogTool
           raise ValidationException, "Missing product #{rp.product.key} in zuora"
         end
 
-        wait_for_answer.call("Create new rp #{rp.key}")
+        skip = wait_for_answer.call("Create new rp #{rp.key}")
+        if skip
+          @logger.warn("Skipping creation of new rp #{rp.key}")
+        else
 
-        # start_date/end_date must be stricly included in the one defined at the product level.
-        start_date = z_product[0]['effectiveStartDate'] + 1
-        end_date = z_product[0]['effectiveEndDate'] - 1
+          # start_date/end_date must be stricly included in the one defined at the product level.
+          start_date = z_product[0]['effectiveStartDate'] + 1
+          end_date = z_product[0]['effectiveEndDate'] - 1
 
-        rp_private_fields = rp.extract_map_from_private_fields
-        res = zuora_client.create_product_rate_plan(rp.name, start_date.to_s, end_date.to_s, z_product[0]['id'], rp_private_fields)
-        if ! res[0][:success]
-          raise ValidationException, "Failed to create rp #{rp.key}, error #{res[0][:errors][0][:messsage]}"
-        end
+          rp_private_fields = rp.extract_map_from_private_fields
+          res = zuora_client.create_product_rate_plan(rp.name, start_date.to_s, end_date.to_s, z_product[0]['id'], rp_private_fields)
+          if ! res[0][:success]
+            raise ValidationException, "Failed to create rp #{rp.key}, error #{res[0][:errors][0][:messsage]}"
+          end
         
-        rp_id = res[0][:id]
-        res = zuora_client.create_product_rate_plan_charge(rp.name, rp.accounting_code, rp.billing_period, rp_id, rp.charge_type, rp.prices)
-        if ! res[0][:success]
-          raise ValidationException, "Failed to create prpc for #{rp.key}, rp.id = #{rp_id},  error #{res[0][:errors][0][:messsage]}"
+          rp_id = res[0][:id]
+          res = zuora_client.create_product_rate_plan_charge(rp.name, rp.accounting_code, rp.billing_period, rp_id, rp.charge_type, rp.prices)
+          if ! res[0][:success]
+            raise ValidationException, "Failed to create prpc for #{rp.key}, rp.id = #{rp_id},  error #{res[0][:errors][0][:messsage]}"
+          end
+          @logger.info("Successfully created rp with chargess #{rp.key} : id = #{rp_id}")
         end
-        @logger.info("Successfully created rp with chargess #{rp.key} : id = #{rp_id}")
       end
 
     end
@@ -165,10 +176,14 @@ module CatalogTool
         end
         
         wait_for_answer.call("Update product #{p.key}")
-        product_private_fields = p.extract_map_from_private_fields        
-        res = zuora_client.update_product(z_product[0]['id'], product_private_fields)
-        if ! res[0][:success]
-          raise ValidationException, "Failed to update product for #{p.key},  error #{res[0][:errors][0][:messsage]}"
+        if skip
+            @logger.warn("Skipping update of product #{p.key}")
+        else
+          product_private_fields = p.extract_map_from_private_fields        
+          res = zuora_client.update_product(z_product[0]['id'], product_private_fields)
+          if ! res[0][:success]
+            raise ValidationException, "Failed to update product for #{p.key},  error #{res[0][:errors][0][:messsage]}"
+          end
         end
         @logger.info("Successfully updated product #{p.key}")
       end
@@ -183,14 +198,17 @@ module CatalogTool
           raise ValidationException, "Missing PRP #{rp.key} in zuora"
         end
         
-        wait_for_answer.call("Update prp #{rp.key}")
-        rp_private_fields = rp.extract_map_from_private_fields        
-        res = zuora_client.update_product_rate_plan(z_prp[0]['id'], rp.name, rp_private_fields)
-        if ! res[0][:success]
-          raise ValidationException, "Failed to update prp for #{rp.key},  error #{res[0][:errors][0][:messsage]}"
+        skip = wait_for_answer.call("Update prp #{rp.key}")
+        if skip
+          @logger.warn("Skipping update of prp #{rp.key}")
+        else
+          rp_private_fields = rp.extract_map_from_private_fields        
+          res = zuora_client.update_product_rate_plan(z_prp[0]['id'], rp.name, rp_private_fields)
+          if ! res[0][:success]
+            raise ValidationException, "Failed to update prp for #{rp.key},  error #{res[0][:errors][0][:messsage]}"
+          end
+          @logger.info("Successfully updated prp #{rp.key}")
         end
-        @logger.info("Successfully updated prp #{rp.key}")
-
       end
     end
     
@@ -224,12 +242,15 @@ module CatalogTool
           rp_price_for_currency = rp.price_for_currency(cur_currency)
           if rp_price_for_currency != cur_price
             
-            wait_for_answer.call("Updating #{rp.key} currency #{cur_currency} from #{cur_price} -> #{rp_price_for_currency}")
-            
-            res = zuora_client.update_one_currency(cur_id, rp_price_for_currency)
-            if ! res[0][:success]
-              raise ValidationException, "Failed to update price for #{rp.key} currency #{cur_currency}"
-            end
+            skip = wait_for_answer.call("Updating #{rp.key} currency #{cur_currency} from #{cur_price} -> #{rp_price_for_currency}")
+            if skip
+               @logger.warn("Skipping update of #{rp.key} currency #{cur_currency} from #{cur_price} -> #{rp_price_for_currency}")
+             else            
+               res = zuora_client.update_one_currency(cur_id, rp_price_for_currency)
+               if ! res[0][:success]
+                 raise ValidationException, "Failed to update price for #{rp.key} currency #{cur_currency}"
+               end
+             end
           end
         end
         
