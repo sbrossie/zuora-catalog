@@ -236,15 +236,18 @@ module CatalogTool
 
 
       price_differs = false
+      currencies_diff_debug = ""
       Currency.each_with_index do |c, i|
         cur_currency = c.value.downcase
         getter = "#{cur_currency}".to_sym
         if (self.send(getter) != csv_rp.send(getter))
-          @logger.debug("\t -> [RP #{self.key}] price differs for rp = #{self.key} for currency #{c.value}: #{self.send(getter)} => #{csv_rp.send(getter)} ")
+          currencies_diff_debug += "(#{c.value}: #{self.send(getter)} => #{csv_rp.send(getter)}) "
           price_updates.push(csv_rp) unless price_differs
           price_differs = true
-          break
         end
+      end
+      if price_differs
+          @logger.debug("\t -> [RP #{self.key}] price differs for rp = #{self.key} for currencies : #{currencies_diff_debug}")
       end
       true
     end
