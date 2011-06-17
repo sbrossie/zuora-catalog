@@ -203,7 +203,7 @@ module CatalogTool
           @logger.warn("Skipping update of prp #{rp.key}")
         else
           rp_private_fields = rp.extract_map_from_private_fields        
-          res = zuora_client.update_product_rate_plan(z_prp[0]['id'], rp.name, rp_private_fields)
+          res = zuora_client.update_product_rate_plan(z_prp[0]['id'], nil, rp_private_fields)
           if ! res[0][:success]
             raise ValidationException, "Failed to update prp for #{rp.key},  error #{res[0][:errors][0][:messsage]}"
           end
