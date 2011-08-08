@@ -223,7 +223,8 @@ module CatalogTool
         
         z_prp_id  = z_prp[0]['id']
 
-        z_prpc = zuora_client.get_prpc_from_prp_id_and_much(z_prp_id, rp.billing_period, rp.charge_type)
+        #z_prpc = zuora_client.get_prpc_from_prp_id_and_much(z_prp_id, rp.billing_period, rp.charge_type)
+        z_prpc = zuora_client.get_prpc_from_prp_id_and_much(z_prp_id, rp.accounting_code)        
         if z_prpc.size != 1 || z_prpc[0]['id'].nil?
           raise ValidationException, "Missing PRPC for #{rp.key} #{rp.billing_period}  #{rp.charge_type} in zuora"
         end

@@ -61,16 +61,16 @@ module CatalogTool
 
       def create_product_rate_plan_charge(name, code, billing_period, prp_id, charge_type, prices)
 
-        rev_code = (billing_period == "Month") ? "Monthly" : billing_period
+        rev_code = get_rev_code_from_billing_period_and_charge_type(billing_period, charge_type)
 
         prpc = ZUORA::ProductRatePlanCharge.new
         prpc.name = name unless name.nil?
         prpc.accountingCode = code
-        prpc.revRecCode = rev_code #rev_code # Monthly/Annual
+        prpc.revRecCode = rev_code #rev_code # OneTime/Monthly/Annual
         prpc.chargeModel = "FlatFee" # Tiered, PerUnit ...
         prpc.triggerEvent = "ContractEffective"
-        prpc.billingPeriod = billing_period # Month Annual ...
-        prpc.billCycleType = (billing_period == "Month") ? "DefaultFromCustomer" : "SubscriptionStartDay"
+        prpc.billingPeriod = billing_period if (billing_period && !billing_period.empty?) # Month Annual ...
+        prpc.billCycleType = (billing_period == "Annual") ? "SubscriptionStartDay" : "DefaultFromCustomer"
         prpc.billingPeriodAlignement = "AlignToCharge"
         prpc.revRecTriggerCondition = "ContractEffectiveDate"
         prpc.productRatePlanId = prp_id
@@ -176,9 +176,18 @@ module CatalogTool
         @client.query("select #{fields} from ProductRatePlanCharge where ProductRatePlanId = '#{prp_id}'")
       end
 
-      def get_prpc_from_prp_id_and_much(prp_id, billing_period, charge_type)
-        fields = get_query_fields("Id, AccountingCode, DefaultQuantity, MaxQuantity, MinQuantity, Name, ProductRatePlanId, BillingPeriod, ChargeType", nil)                        
-        @client.query("select #{fields} from ProductRatePlanCharge where ProductRatePlanId = '#{prp_id}' and BillingPeriod = '#{billing_period}' and ChargeType = '#{charge_type}'")
+      def get_prpc_from_prp_id_and_much(prp_id, accounting_code)
+      # Not sure why but looks like queries with ChargeType don't always work: FPSZ!
+      #def get_prpc_from_prp_id_and_much(prp_id, billing_period, charge_type)
+        fields = get_query_fields("Id, AccountingCode, DefaultQuantity, MaxQuantity, MinQuantity, Name, ProductRatePlanId, BillingPeriod, ChargeType", nil)   
+        #query = "select #{fields} from ProductRatePlanCharge where ProductRatePlanId = '#{prp_id}' and ChargeType = '#{charge_type}'"
+        #if billing_period && !billing_period.empty?
+        #  query += " and BillingPeriod = '#{billing_period}'"
+        #end
+        query = "select #{fields} from ProductRatePlanCharge where ProductRatePlanId = '#{prp_id}' and AccountingCode = '#{accounting_code}'"
+
+        puts "query = #{query}"
+        @client.query(query)
       end
 
       def get_prpct_from_prpc_id(prpc_id)
@@ -194,6 +203,17 @@ module CatalogTool
       
       
       private
+      
+      def get_rev_code_from_billing_period_and_charge_type(billing_period, charge_type)
+        case charge_type
+        when "OneTime"
+          return charge_type
+        when "Recurring"
+          return (billing_period == "Month") ? "Monthly" : billing_period
+        end
+        nil
+      end
+      
       
       def extract_private_fields(private_fields)
 

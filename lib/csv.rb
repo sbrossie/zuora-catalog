@@ -232,9 +232,6 @@ module CatalogTool
         end
       end
 
-
-
-
       price_differs = false
       currencies_diff_debug = ""
       Currency.each_with_index do |c, i|
